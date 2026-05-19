@@ -53,8 +53,18 @@ jobs:
               for f in os.listdir('.')
               if f.endswith('.json') and PATTERN.match(f.replace('.json', ''))
           }
-          missing = [v for v in pypi if v >= MIN and v not in existing]
+          # Skip PyPI's current "latest" — the live /reference/ pages
+          # in docs.anyscale.com already render the latest version, so
+          # archiving it would just duplicate (and mislabel as archived)
+          # the same content. It gets archived on the next run, once
+          # something newer takes over as latest.
+          pypi_latest = pypi[-1] if pypi else None
+          missing = [
+              v for v in pypi
+              if v >= MIN and v not in existing and v != pypi_latest
+          ]
           out = ' '.join('.'.join(str(p) for p in v) for v in missing)
+          print(f'PyPI latest (skipped): {".".join(str(p) for p in pypi_latest) if pypi_latest else "(none)"}')
           print(f'Missing versions: {out or "(none)"}')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f'versions={out}\n')
