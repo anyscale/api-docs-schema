@@ -9,12 +9,13 @@ Each file in the repo root is the structured introspection of one published `any
 ```
 https://cdn.jsdelivr.net/gh/anyscale/api-docs-schema@latest/<version>.json
 https://cdn.jsdelivr.net/gh/anyscale/api-docs-schema@latest/versions.json
+https://cdn.jsdelivr.net/gh/anyscale/api-docs-schema@latest/pages.json
 ```
 
 - `@latest` resolves to the highest semver-shaped git tag — auto-updated by the archive workflow.
 - Pin to a specific tag (`@v2026.05.19-12`) for reproducible builds.
 
-`versions.json` is a JSON array of available version strings, newest first.
+`versions.json` is a JSON array of version strings, newest first. `pages.json` is a `{version: [pages]}` map used by the docs site's redirect generator to map pre-SPA `/ref/<version>/<page>` URLs onto the new `/ref/<page>?v=<version>` query-param scheme.
 
 ## Automation
 
@@ -30,20 +31,21 @@ https://cdn.jsdelivr.net/gh/anyscale/api-docs-schema@latest/versions.json
 
 ```
 ./scripts/archive_version.sh 0.26.100
-python3 scripts/update_versions_json.py
+python3 scripts/update_manifests.py
 ```
 
 ## Layout
 
 ```
 <version>.json             # one per anyscale release (0.26.46 - 0.26.100 today)
-versions.json              # manifest of all available versions, sorted desc
+versions.json              # array of versions, sorted desc
+pages.json                 # {version: [page_names]} map for the docs redirect generator
 scripts/
   introspect.py            # reads the installed anyscale wheel, emits reference.json
   archive_json.py          # post-processes reference.json into the schema served at <version>.json
   util.py                  # shared helpers
   archive_version.sh       # one-shot wrapper used by the workflow and humans
-  update_versions_json.py  # regenerates versions.json
+  update_manifests.py      # regenerates versions.json and pages.json
 .github/workflows/
   archive.yml              # weekly cron + manual dispatch
 ```

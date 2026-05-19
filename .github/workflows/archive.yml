@@ -98,9 +98,9 @@ jobs:
             ./scripts/archive_version.sh "$v"
           done
 
-      - name: Regenerate versions.json
+      - name: Regenerate versions.json + pages.json
         if: steps.missing.outputs.versions != ''
-        run: python3 scripts/update_versions_json.py
+        run: python3 scripts/update_manifests.py
 
       - name: Commit, push, tag
         if: steps.missing.outputs.versions != ''
