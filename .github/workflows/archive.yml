@@ -1,0 +1,116 @@
+name: Archive Anyscale API schemas
+
+# Detects newly released `anyscale` versions on PyPI and adds their
+# JSON schema to this repo. Each run that finds new versions commits
+# them, regenerates versions.json, and tags the resulting commit so
+# jsDelivr can serve the new versions as @latest within ~15 minutes.
+
+on:
+  schedule:
+    - cron: '0 11 * * 1'  # Mondays at 11:00 UTC (~4am PT)
+  workflow_dispatch:
+
+env:
+  PYENV_RELEASE: v2.6.25
+  DOCGEN_PYTHON_VERSION: '3.10'
+  CACHE_VERSION: 1  # bump to force pyenv cache invalidation
+
+permissions:
+  contents: write
+
+jobs:
+  archive:
+    name: Archive missing versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history to push a tag from the workflow.
+          fetch-depth: 0
+
+      - name: Determine missing versions
+        id: missing
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+
+          MIN = (0, 26, 46)
+          PATTERN = re.compile(r'^\d+\.\d+\.\d+$')
+
+          with urllib.request.urlopen('https://pypi.org/pypi/anyscale/json') as r:
+              data = json.load(r)
+          pypi = sorted(
+              tuple(int(p) for p in v.split('.'))
+              for v in data['releases']
+              if PATTERN.match(v)
+          )
+
+          existing = {
+              tuple(int(p) for p in f.replace('.json', '').split('.'))
+              for f in os.listdir('.')
+              if f.endswith('.json') and PATTERN.match(f.replace('.json', ''))
+          }
+          missing = [v for v in pypi if v >= MIN and v not in existing]
+          out = ' '.join('.'.join(str(p) for p in v) for v in missing)
+          print(f'Missing versions: {out or "(none)"}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'versions={out}\n')
+          PY
+
+      - name: Cache pyenv
+        if: steps.missing.outputs.versions != ''
+        id: cache-pyenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.pyenv
+          key: ${{ runner.os }}-pyenv-${{ env.PYENV_RELEASE }}-python-${{ env.DOCGEN_PYTHON_VERSION }}-v${{ env.CACHE_VERSION }}
+
+      - name: Install pyenv
+        if: steps.missing.outputs.versions != '' && steps.cache-pyenv.outputs.cache-hit != 'true'
+        run: git clone https://github.com/pyenv/pyenv.git --branch ${{ env.PYENV_RELEASE }} --depth 1 ~/.pyenv
+
+      - name: Install Python build deps
+        if: steps.missing.outputs.versions != '' && steps.cache-pyenv.outputs.cache-hit != 'true'
+        run: sudo apt-get install -y libbz2-dev libreadline-dev liblzma-dev
+
+      - name: Install Python via pyenv
+        if: steps.missing.outputs.versions != '' && steps.cache-pyenv.outputs.cache-hit != 'true'
+        run: |
+          export PYENV_ROOT="$HOME/.pyenv"
+          export PATH="$PYENV_ROOT/bin:$PATH"
+          pyenv install $(pyenv latest --known ${{ env.DOCGEN_PYTHON_VERSION }})
+
+      - name: Configure pyenv
+        if: steps.missing.outputs.versions != ''
+        run: |
+          echo "PYENV_ROOT=$HOME/.pyenv" >> $GITHUB_ENV
+          echo "$HOME/.pyenv/bin" >> $GITHUB_PATH
+          echo "$HOME/.pyenv/shims" >> $GITHUB_PATH
+
+      - name: Archive each missing version
+        if: steps.missing.outputs.versions != ''
+        run: |
+          set -e
+          for v in ${{ steps.missing.outputs.versions }}; do
+            ./scripts/archive_version.sh "$v"
+          done
+
+      - name: Regenerate versions.json
+        if: steps.missing.outputs.versions != ''
+        run: python3 scripts/update_versions_json.py
+
+      - name: Commit, push, tag
+        if: steps.missing.outputs.versions != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Archive: ${{ steps.missing.outputs.versions }}"
+          TAG="v$(date -u +%Y.%m.%d)-${{ github.run_number }}"
+          git tag -a "$TAG" -m "Archive run on $(date -u +%Y-%m-%d) (${{ steps.missing.outputs.versions }})"
+          git push origin HEAD
+          git push origin "$TAG"
+          echo "Tagged $TAG"
