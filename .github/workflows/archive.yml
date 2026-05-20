@@ -102,6 +102,14 @@ jobs:
 
       - name: Archive each missing version
         if: steps.missing.outputs.versions != ''
+        env:
+          # archive_version.sh fetches introspect.py + util.py from
+          # anyscale/docs at the SHA pinned in .docs-introspect-sha,
+          # via `gh api`. That needs a token with contents:read on
+          # anyscale/docs. The existing DOCS_DISPATCH_TOKEN is reused
+          # if it carries that scope; otherwise add a separate secret
+          # and reference it here.
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
         run: |
           set -e
           for v in ${{ steps.missing.outputs.versions }}; do
