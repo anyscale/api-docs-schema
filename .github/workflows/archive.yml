@@ -28,6 +28,23 @@ jobs:
           # Need full history to push a tag from the workflow.
           fetch-depth: 0
 
+      # Precondition: the archive step needs to fetch introspect.py
+      # from anyscale/docs at the SHA pinned in .docs-introspect-sha.
+      # That requires GH_TOKEN with contents:read on anyscale/docs.
+      # Fail fast and clearly here if the token doesn't have the
+      # scope, rather than mid-archive run.
+      - name: Verify docs-repo read access
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+        run: |
+          SHA="$(tr -d '[:space:]' < .docs-introspect-sha)"
+          if ! gh api "repos/anyscale/docs/contents/scripts/docgen/introspect.py?ref=${SHA}" \
+              -H "Accept: application/vnd.github.raw" --silent > /dev/null; then
+            echo "::error::DOCS_DISPATCH_TOKEN can't read anyscale/docs at ${SHA}. Verify the secret has contents:read scope, or swap to a dedicated read-access token in this workflow file."
+            exit 1
+          fi
+          echo "OK: docs-repo read access confirmed at ${SHA}."
+
       - name: Determine missing versions
         id: missing
         run: |
